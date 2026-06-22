@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+
+# IDE 本地状态
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# 系统和日志
+.DS_Store
+Thumbs.db
+*.log
+
+# 本地敏感配置
+.env
+.env.*
+!.env.example
+.archery-debug.env
+CLAUDE.local.md
