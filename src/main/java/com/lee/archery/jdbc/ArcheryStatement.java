@@ -106,14 +106,22 @@ public final class ArcheryStatement implements InvocationHandler {
             return false;
         }
         if ("setQueryTimeout".equals(name)) {
-            queryTimeout = ((Number) args[0]).intValue();
+            int timeout = ((Number) args[0]).intValue();
+            if (timeout < 0) {
+                throw new SQLException("Query timeout must be non-negative");
+            }
+            queryTimeout = timeout;
             return null;
         }
         if ("getQueryTimeout".equals(name)) {
             return queryTimeout;
         }
         if ("setMaxRows".equals(name)) {
-            maxRows = ((Number) args[0]).intValue();
+            int rows = ((Number) args[0]).intValue();
+            if (rows < 0) {
+                throw new SQLException("Max rows must be non-negative");
+            }
+            maxRows = rows;
             return null;
         }
         if ("getMaxRows".equals(name)) {
@@ -164,7 +172,7 @@ public final class ArcheryStatement implements InvocationHandler {
         String database = connection.currentDatabase();
         String schema = connection.currentSchema();
         currentResultSet = ArcheryResultSet.create(statement, connection.config(),
-            connection.client().query(new ArcheryQueryRequest(sql, "", database, schema)), resultSetType, resultSetConcurrency);
+            connection.client().query(new ArcheryQueryRequest(sql, "", database, schema, maxRows)), resultSetType, resultSetConcurrency);
         ArcheryDebugLog.write(connection.config(), "executeQuery type=" + resultSetType + ", concurrency="
             + resultSetConcurrency + ", sql=" + ArcheryJdbcObjects.abbreviate(sql, 500));
         return currentResultSet;

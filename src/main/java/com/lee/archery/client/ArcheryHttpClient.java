@@ -9,6 +9,7 @@ import okhttp3.*;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.sql.SQLInvalidAuthorizationSpecException;
+import java.sql.SQLNonTransientException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -64,7 +65,7 @@ public final class ArcheryHttpClient implements AutoCloseable {
             .add("schema_name", request.getSchemaName().isEmpty() ? config.getSchemaName() : request.getSchemaName())
             .add("tb_name", request.getTableName())
             .add("sql_content", request.getSql())
-            .add("limit_num", String.valueOf(config.getLimitNum()))
+            .add("limit_num", String.valueOf(request.getLimitNum() > 0 ? request.getLimitNum() : config.getLimitNum()))
             .build();
         JsonNode data = executeWithRelogin(() -> postWebForm("/query/", body));
         return new ArcheryQueryResponse(data);
@@ -239,6 +240,9 @@ public final class ArcheryHttpClient implements AutoCloseable {
         String archeryMessage = json.path("msg").asText(message);
         if (authorizationError) {
             throw new SQLInvalidAuthorizationSpecException(archeryMessage);
+        }
+        if (status == 2) {
+            throw new SQLNonTransientException(archeryMessage, "42501");
         }
         throw new SQLException(archeryMessage);
     }

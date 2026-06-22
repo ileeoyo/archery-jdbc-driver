@@ -347,9 +347,11 @@ public final class ArcheryResultSet implements InvocationHandler {
     private static List<ArcheryColumn> readColumns(ArcheryQueryResponse response) {
         List<ArcheryColumn> columns = new ArrayList<>();
         JsonNode columnList = response.getColumnList();
+        JsonNode columnTypes = response.getColumnTypes();
         if (columnList.isArray()) {
-            for (JsonNode column : columnList) {
-                columns.add(new ArcheryColumn(column.asText()));
+            for (int index = 0; index < columnList.size(); index++) {
+                String typeName = columnTypes.isArray() && index < columnTypes.size() ? columnTypes.get(index).asText() : "";
+                columns.add(new ArcheryColumn(columnList.get(index).asText(), jdbcType(typeName), normalizedTypeName(typeName)));
             }
         }
         if (columns.isEmpty() && response.getRows().isArray() && response.getRows().size() > 0) {
@@ -359,6 +361,48 @@ public final class ArcheryResultSet implements InvocationHandler {
             }
         }
         return columns;
+    }
+
+
+    private static int jdbcType(String typeName) {
+        String lower = typeName == null ? "" : typeName.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("bigint")) {
+            return Types.BIGINT;
+        }
+        if (lower.startsWith("int") || lower.startsWith("integer") || lower.startsWith("tinyint")
+            || lower.startsWith("smallint") || lower.startsWith("mediumint")) {
+            return Types.INTEGER;
+        }
+        if (lower.startsWith("decimal") || lower.startsWith("numeric")) {
+            return Types.DECIMAL;
+        }
+        if (lower.startsWith("double") || lower.startsWith("float") || lower.startsWith("real")) {
+            return Types.DOUBLE;
+        }
+        if (lower.startsWith("bool") || lower.startsWith("boolean") || lower.startsWith("bit")) {
+            return Types.BOOLEAN;
+        }
+        if (lower.startsWith("datetime") || lower.startsWith("timestamp")) {
+            return Types.TIMESTAMP;
+        }
+        if (lower.startsWith("date")) {
+            return Types.DATE;
+        }
+        if (lower.startsWith("time")) {
+            return Types.TIME;
+        }
+        if (lower.contains("blob") || lower.startsWith("binary") || lower.startsWith("varbinary")) {
+            return Types.BINARY;
+        }
+        if (lower.contains("text") || lower.startsWith("json")) {
+            return Types.LONGVARCHAR;
+        }
+        return Types.VARCHAR;
+    }
+
+
+    private static String normalizedTypeName(String typeName) {
+        return typeName == null || typeName.isEmpty() ? "VARCHAR" : typeName.toUpperCase(Locale.ROOT);
     }
 
 
