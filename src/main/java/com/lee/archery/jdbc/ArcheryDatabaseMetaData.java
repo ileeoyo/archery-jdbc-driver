@@ -48,14 +48,18 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
             return "Archery JDBC Driver";
         }
         if ("getDriverVersion".equals(name)) {
-            return "0.1.7";
+            return ArcheryDriverVersion.version();
         }
-        if ("getDriverMajorVersion".equals(name) || "getDatabaseMajorVersion".equals(name)
-            || "getJDBCMajorVersion".equals(name)) {
+        if ("getDriverMajorVersion".equals(name)) {
+            return ArcheryDriverVersion.majorVersion();
+        }
+        if ("getDatabaseMajorVersion".equals(name) || "getJDBCMajorVersion".equals(name)) {
             return 0;
         }
-        if ("getDriverMinorVersion".equals(name) || "getDatabaseMinorVersion".equals(name)
-            || "getJDBCMinorVersion".equals(name)) {
+        if ("getDriverMinorVersion".equals(name)) {
+            return ArcheryDriverVersion.minorVersion();
+        }
+        if ("getDatabaseMinorVersion".equals(name) || "getJDBCMinorVersion".equals(name)) {
             return 1;
         }
         if ("isReadOnly".equals(name)) {

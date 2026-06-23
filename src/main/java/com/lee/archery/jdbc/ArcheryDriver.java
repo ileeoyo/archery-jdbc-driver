@@ -10,9 +10,6 @@ import java.util.logging.Logger;
  * Archery JDBC Driver 入口，负责被 DriverManager 和 IDEA/DataGrip 识别并创建只读连接。
  */
 public final class ArcheryDriver implements Driver {
-    private static final int MAJOR_VERSION = 0;
-    private static final int MINOR_VERSION = 1;
-
     static {
         try {
             DriverManager.registerDriver(new ArcheryDriver());
@@ -51,13 +48,13 @@ public final class ArcheryDriver implements Driver {
 
     @Override
     public int getMajorVersion() {
-        return MAJOR_VERSION;
+        return ArcheryDriverVersion.majorVersion();
     }
 
 
     @Override
     public int getMinorVersion() {
-        return MINOR_VERSION;
+        return ArcheryDriverVersion.minorVersion();
     }
 
 

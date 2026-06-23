@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.lee.archery"
-version = "0.1.8"
+version = "0.2.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
@@ -16,6 +16,13 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+}
+
+tasks.processResources {
+    inputs.property("driverVersion", project.version.toString())
+    filesMatching("archery-jdbc-driver.properties") {
+        expand("driverVersion" to project.version.toString())
+    }
 }
 
 tasks.jar {

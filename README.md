@@ -26,7 +26,7 @@ Driver 不会直接连接业务数据库，所有登录、查询和 metadata 获
 构建产物位于：
 
 ```text
-build/libs/archery-jdbc-driver-0.1.7.jar
+build/libs/archery-jdbc-driver-<version>.jar
 ```
 
 如果在 Windows PowerShell 中执行，可使用：
@@ -41,7 +41,7 @@ build/libs/archery-jdbc-driver-0.1.7.jar
 
 - 打开 `Database` 工具窗口。
 - 点击 `+`，选择 `Driver`。
-- 添加构建出的 `archery-jdbc-driver-0.1.7.jar`。
+- 添加构建出的 `archery-jdbc-driver-<version>.jar`。
 - 设置 `Driver class` 为 `com.lee.archery.jdbc.ArcheryDriver`。
 - 新建 Data Source，选择刚创建的 Driver。
 - 填写 JDBC URL、用户名、密码。
