@@ -109,10 +109,12 @@ public final class ArcheryConnection implements InvocationHandler {
 
     java.util.List<String> tableNames(String schemaName) throws SQLException {
         String selectedSchema = schemaName == null || schemaName.isEmpty() ? currentSchema() : schemaName;
-        java.util.List<String> tableNames = tableNamesBySchema.get(selectedSchema);
+        String selectedDatabase = metadataDatabase(selectedSchema);
+        String cacheKey = metadataCacheKey(selectedDatabase, selectedSchema);
+        java.util.List<String> tableNames = tableNamesBySchema.get(cacheKey);
         if (tableNames == null) {
-            tableNames = new java.util.ArrayList<>(client.resource("table", currentDatabase(), selectedSchema, "").getNames());
-            tableNamesBySchema.put(selectedSchema, tableNames);
+            tableNames = new java.util.ArrayList<>(client.resource("table", selectedDatabase, selectedSchema, "").getNames());
+            tableNamesBySchema.put(cacheKey, tableNames);
         }
         return tableNames;
     }
@@ -125,7 +127,8 @@ public final class ArcheryConnection implements InvocationHandler {
 
     java.util.List<String> columnNames(String schemaName, String tableName) throws SQLException {
         String selectedSchema = schemaName == null || schemaName.isEmpty() ? currentSchema() : schemaName;
-        String key = selectedSchema + "." + tableName;
+        String selectedDatabase = metadataDatabase(selectedSchema);
+        String key = metadataCacheKey(selectedDatabase, selectedSchema) + "." + tableName;
         java.util.List<String> columnNames = columnNamesByTable.get(key);
         if (columnNames == null) {
             columnNames = new java.util.ArrayList<>();
@@ -133,7 +136,7 @@ public final class ArcheryConnection implements InvocationHandler {
                 columnNames.add(column.getName());
             }
             if (columnNames.isEmpty()) {
-                columnNames.addAll(client.resource("column", currentDatabase(), selectedSchema, tableName).getNames());
+                columnNames.addAll(client.resource("column", selectedDatabase, selectedSchema, tableName).getNames());
             }
             columnNamesByTable.put(key, columnNames);
         }
@@ -148,13 +151,45 @@ public final class ArcheryConnection implements InvocationHandler {
 
     ArcheryTableDefinition tableDefinition(String schemaName, String tableName) throws SQLException {
         String selectedSchema = schemaName == null || schemaName.isEmpty() ? currentSchema() : schemaName;
-        String key = selectedSchema + "." + tableName;
+        String selectedDatabase = metadataDatabase(selectedSchema);
+        String key = metadataCacheKey(selectedDatabase, selectedSchema) + "." + tableName;
         ArcheryTableDefinition definition = tableDefinitions.get(key);
         if (definition == null) {
-            definition = ArcheryTableDefinition.fromDescribe(tableName, client.describeTable(currentDatabase(), selectedSchema, tableName));
+            definition = ArcheryTableDefinition.fromDescribe(tableName, client.describeTable(selectedDatabase, selectedSchema, tableName));
             tableDefinitions.put(key, definition);
         }
         return definition;
+    }
+
+
+    /**
+     * MySQL 的 JDBC schema 即 database；显式配置 schemaName 时仍保留 Archery dbName/schemaName 的分层语义。
+     */
+    private String metadataDatabase(String selectedSchema) throws SQLException {
+        if (selectedSchema == null || selectedSchema.isEmpty()) {
+            return currentDatabase();
+        }
+        if (config.getSchemaName() != null && !config.getSchemaName().isEmpty()
+            && selectedSchema.equals(config.getSchemaName())) {
+            return currentDatabase();
+        }
+        return selectedSchema;
+    }
+
+
+    /**
+     * metadata 缓存必须同时区分 database 和 schema，避免同一实例切库后复用旧库表结构。
+     */
+    private String metadataCacheKey(String database, String schemaName) {
+        return nullToEmpty(database) + "|" + nullToEmpty(schemaName);
+    }
+
+
+    /**
+     * 统一把空值纳入缓存 key，避免 null 和空字符串造成重复缓存项。
+     */
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
 
