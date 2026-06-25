@@ -16,7 +16,7 @@ public final class ArcheryJdbcConfig {
      */
     public static final String URL_PREFIX = "jdbc:archery:";
 
-    private static final int DEFAULT_LIMIT_NUM = 100;
+    private static final int DEFAULT_LIMIT_NUM = 500;
     private static final int DEFAULT_CONNECT_TIMEOUT_MILLIS = 10_000;
     private static final int DEFAULT_READ_TIMEOUT_MILLIS = 60_000;
 
