@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.lee.archery"
-version = providers.gradleProperty("driverVersion").getOrElse("0.2.0")
+version = providers.gradleProperty("driverVersion").getOrElse("0.2.1")
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8

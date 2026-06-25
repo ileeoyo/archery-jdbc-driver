@@ -28,6 +28,9 @@ final class ArcheryMetadataQueryHandler {
      */
     ResultSet tryHandle(Statement statement, String sql) throws SQLException {
         String normalized = normalizedMetadataSql(sql);
+        if (isLocalSystemProbeQuery(sql, normalized)) {
+            return localSystemProbeResult(statement, sql);
+        }
         if (normalized.contains("information_schema.schemata")) {
             return schemataResult(statement);
         }
@@ -294,6 +297,131 @@ final class ArcheryMetadataQueryHandler {
     }
 
 
+    /**
+     * DataGrip 会频繁执行无 FROM 的环境探测 SQL，这类查询本地即可回答，避免污染 Archery 查询日志。
+     */
+    private ResultSet localSystemProbeResult(Statement statement, String sql) throws SQLException {
+        List<ArcheryColumn> columns = new ArrayList<>();
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (SelectExpression expression : selectExpressions(sql)) {
+            columns.add(new ArcheryColumn(expression.label));
+            row.put(expression.label, localSystemValue(expression.expression));
+        }
+        ArcheryDebugLog.write(connection.config(), "metadataQuery localSystemProbe columns=" + columns.size());
+        return resultSet(statement, columns, Collections.singletonList(row));
+    }
+
+
+    private Object localSystemValue(String expression) throws SQLException {
+        String normalized = expression.toLowerCase(Locale.ROOT).trim();
+        if (normalized.startsWith("database()")) {
+            return connection.currentDatabase();
+        }
+        if (normalized.startsWith("schema()")) {
+            return connection.currentSchema();
+        }
+        if (normalized.startsWith("left(user()")) {
+            return connection.config().getUsername();
+        }
+        if (normalized.startsWith("user()") || normalized.startsWith("current_user()")) {
+            return connection.config().getUsername() + "@archery";
+        }
+        if (normalized.matches("-?\\d+")) {
+            return Long.valueOf(normalized);
+        }
+        if (normalized.startsWith("'") && normalized.endsWith("'")) {
+            return expression.substring(1, expression.length() - 1).replace("''", "'");
+        }
+        if ("null".equals(normalized)) {
+            return null;
+        }
+        return "";
+    }
+
+
+    private boolean isLocalSystemProbeQuery(String sql, String normalized) {
+        if (!normalized.startsWith("select ") || normalized.contains(" from ")) {
+            return false;
+        }
+        List<SelectExpression> expressions = selectExpressions(sql);
+        if (expressions.isEmpty()) {
+            return false;
+        }
+        for (SelectExpression expression : expressions) {
+            if (!isSafeLocalSystemExpression(expression.expression)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    private boolean isSafeLocalSystemExpression(String expression) {
+        String normalized = expression.toLowerCase(Locale.ROOT).trim();
+        return normalized.startsWith("database()") || normalized.startsWith("schema()")
+            || normalized.startsWith("user()") || normalized.startsWith("current_user()")
+            || normalized.startsWith("left(user()") || normalized.matches("-?\\d+")
+            || (normalized.startsWith("'") && normalized.endsWith("'")) || "null".equals(normalized);
+    }
+
+
+    private List<SelectExpression> selectExpressions(String sql) {
+        String selectList = trimLimit(sql.trim().substring("select".length()).trim());
+        List<SelectExpression> expressions = new ArrayList<>();
+        for (String expression : splitSelectList(selectList)) {
+            expressions.add(selectExpression(expression));
+        }
+        return expressions;
+    }
+
+
+    private String trimLimit(String selectList) {
+        return selectList.replaceFirst("(?is)\\s+limit\\s+\\d+\\s*;?\\s*$", "").replaceFirst(";\\s*$", "").trim();
+    }
+
+
+    private List<String> splitSelectList(String selectList) {
+        List<String> expressions = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int depth = 0;
+        boolean singleQuoted = false;
+        for (int index = 0; index < selectList.length(); index++) {
+            char ch = selectList.charAt(index);
+            if (ch == '\'' && (index == 0 || selectList.charAt(index - 1) != '\\')) {
+                singleQuoted = !singleQuoted;
+            }
+            if (!singleQuoted && ch == '(') {
+                depth++;
+            } else if (!singleQuoted && ch == ')' && depth > 0) {
+                depth--;
+            } else if (!singleQuoted && ch == ',' && depth == 0) {
+                expressions.add(current.toString().trim());
+                current.setLength(0);
+                continue;
+            }
+            current.append(ch);
+        }
+        if (current.length() > 0) {
+            expressions.add(current.toString().trim());
+        }
+        return expressions;
+    }
+
+
+    private SelectExpression selectExpression(String rawExpression) {
+        Matcher aliasMatcher = Pattern.compile("(?is)(.+?)\\s+as\\s+([a-z0-9_`]+)$").matcher(rawExpression);
+        if (aliasMatcher.matches()) {
+            return new SelectExpression(aliasMatcher.group(1).trim(), cleanAlias(aliasMatcher.group(2)));
+        }
+        return new SelectExpression(rawExpression, rawExpression);
+    }
+
+
+    private String cleanAlias(String alias) {
+        return alias.replace("`", "");
+    }
+
+
     private boolean isSystemMetadataQuery(String normalized) {
         return normalized.contains("from mysql.") || normalized.contains("from performance_schema.")
             || normalized.contains("from sys.") || normalized.contains("from information_schema")
@@ -439,6 +567,21 @@ final class ArcheryMetadataQueryHandler {
             columns.add(new ArcheryColumn(name));
         }
         return columns;
+    }
+
+
+    /**
+     * 无 FROM 的系统探测查询表达式，保留原表达式作为默认列名。
+     */
+    private static final class SelectExpression {
+        private final String expression;
+        private final String label;
+
+
+        private SelectExpression(String expression, String label) {
+            this.expression = expression;
+            this.label = label;
+        }
     }
 
 

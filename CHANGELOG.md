@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1] - 2026-06-25
+
+### 修复
+
+- 将默认查询限制从 100 调整为 500，提升常规结果预览可用性。
+- 元数据缓存按 database 与 schema 共同隔离，避免同一实例切换 database 后复用旧库表结构。
+
 ## [0.2.0] - 2026-06-23
 
 首次发布 Archery JDBC Driver，用于在 DataGrip、IDEA 等支持 JDBC 的工具中通过 Archery Web 接口访问数据库查询能力。
