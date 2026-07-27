@@ -91,12 +91,16 @@ public final class ArcheryResultSetMetaData implements InvocationHandler {
 
     private String className(int type) {
         switch (type) {
+            case Types.TINYINT:
+            case Types.SMALLINT:
             case Types.INTEGER:
                 return Integer.class.getName();
             case Types.BIGINT:
                 return Long.class.getName();
-            case Types.DOUBLE:
             case Types.FLOAT:
+            case Types.REAL:
+                return Float.class.getName();
+            case Types.DOUBLE:
                 return Double.class.getName();
             case Types.DECIMAL:
             case Types.NUMERIC:
@@ -106,8 +110,16 @@ public final class ArcheryResultSetMetaData implements InvocationHandler {
                 return Boolean.class.getName();
             case Types.DATE:
                 return java.sql.Date.class.getName();
+            case Types.TIME:
+                return java.sql.Time.class.getName();
             case Types.TIMESTAMP:
                 return java.sql.Timestamp.class.getName();
+            case Types.BINARY:
+            case Types.VARBINARY:
+            case Types.LONGVARBINARY:
+                return byte[].class.getName();
+            case Types.NULL:
+                return Object.class.getName();
             default:
                 return String.class.getName();
         }

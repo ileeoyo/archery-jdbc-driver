@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2] - 2026-07-27
+
+### 修复
+
+- 修复 Archery `/query` 返回 MySQL 协议字段类型名时，IDEA/DataGrip 将 `LONGLONG`、`LONG`、`NEWDECIMAL` 等结果列误判为字符串的问题。
+- 补齐 `BIT`、`TINY`、`SHORT`、`INT24`、`FLOAT`、`DOUBLE`、`DATE`、`TIME`、`TIMESTAMP`、`YEAR`、`JSON`、`GEOMETRY` 等查询结果字段类型到 JDBC 类型码的映射。
+- 完善查询结果元数据的 Java class name 映射，使整数、小数、浮点、时间、二进制和 `NULL` 类型在 IDE 中展示更准确。
+
 ## [0.2.1] - 2026-06-25
 
 ### 修复

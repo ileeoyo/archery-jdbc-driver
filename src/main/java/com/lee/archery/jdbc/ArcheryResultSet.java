@@ -365,22 +365,84 @@ public final class ArcheryResultSet implements InvocationHandler {
 
 
     private static int jdbcType(String typeName) {
-        String lower = typeName == null ? "" : typeName.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("bigint")) {
+        String normalized = typeName == null ? "" : typeName.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return Types.VARCHAR;
+        }
+        switch (normalized) {
+            case "NULL":
+                return Types.NULL;
+            case "BIT":
+                return Types.BIT;
+            case "TINY":
+                return Types.TINYINT;
+            case "SHORT":
+                return Types.SMALLINT;
+            case "INT24":
+            case "LONG":
+                return Types.INTEGER;
+            case "LONGLONG":
+                return Types.BIGINT;
+            case "NEWDECIMAL":
+                return Types.DECIMAL;
+            case "FLOAT":
+                return Types.FLOAT;
+            case "DOUBLE":
+                return Types.DOUBLE;
+            case "STRING":
+                return Types.CHAR;
+            case "VAR_STRING":
+                return Types.VARCHAR;
+            case "BLOB":
+            case "MEDIUM_BLOB":
+            case "LONG_BLOB":
+            case "JSON":
+                return Types.LONGVARCHAR;
+            case "GEOMETRY":
+                return Types.LONGVARBINARY;
+            case "DATE":
+                return Types.DATE;
+            case "TIME":
+                return Types.TIME;
+            case "DATETIME":
+            case "TIMESTAMP":
+                return Types.TIMESTAMP;
+            case "YEAR":
+                return Types.SMALLINT;
+            default:
+                return jdbcTypeFromMysqlDdlName(normalized);
+        }
+    }
+
+
+    private static int jdbcTypeFromMysqlDdlName(String normalizedTypeName) {
+        String lower = normalizedTypeName.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("bigint") || lower.startsWith("serial")) {
             return Types.BIGINT;
         }
-        if (lower.startsWith("int") || lower.startsWith("integer") || lower.startsWith("tinyint")
-            || lower.startsWith("smallint") || lower.startsWith("mediumint")) {
+        if (lower.startsWith("tinyint")) {
+            return Types.TINYINT;
+        }
+        if (lower.startsWith("smallint")) {
+            return Types.SMALLINT;
+        }
+        if (lower.startsWith("int") || lower.startsWith("integer") || lower.startsWith("mediumint")) {
             return Types.INTEGER;
         }
         if (lower.startsWith("decimal") || lower.startsWith("numeric")) {
             return Types.DECIMAL;
         }
-        if (lower.startsWith("double") || lower.startsWith("float") || lower.startsWith("real")) {
+        if (lower.startsWith("float") || lower.startsWith("real")) {
+            return Types.FLOAT;
+        }
+        if (lower.startsWith("double")) {
             return Types.DOUBLE;
         }
-        if (lower.startsWith("bool") || lower.startsWith("boolean") || lower.startsWith("bit")) {
-            return Types.BOOLEAN;
+        if (lower.startsWith("bool") || lower.startsWith("boolean")) {
+            return Types.TINYINT;
+        }
+        if (lower.startsWith("bit")) {
+            return Types.BIT;
         }
         if (lower.startsWith("datetime") || lower.startsWith("timestamp")) {
             return Types.TIMESTAMP;
@@ -391,8 +453,14 @@ public final class ArcheryResultSet implements InvocationHandler {
         if (lower.startsWith("time")) {
             return Types.TIME;
         }
-        if (lower.contains("blob") || lower.startsWith("binary") || lower.startsWith("varbinary")) {
-            return Types.BINARY;
+        if (lower.startsWith("year")) {
+            return Types.SMALLINT;
+        }
+        if (lower.startsWith("binary") || lower.startsWith("varbinary")) {
+            return Types.VARBINARY;
+        }
+        if (lower.contains("blob")) {
+            return Types.LONGVARBINARY;
         }
         if (lower.contains("text") || lower.startsWith("json")) {
             return Types.LONGVARCHAR;
