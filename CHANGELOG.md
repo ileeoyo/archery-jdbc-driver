@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0] - 2026-09-01
+
+### 新增
+
+- 新增 `archery-query-runner` CLI fat jar，用于 Skill 通过 `java -jar` 调用 Archery JDBC 查询能力。
+
+### 变更
+
+- JDBC URL 查询参数与 Driver Properties 存在同名配置时，改为 JDBC URL 查询参数优先。
+- `limitNum` 支持任意非负整数，`0` 表示 Archery max，默认最大返回行数保持为 500。
+- README 补充 CLI fat jar 构建产物和 IDEA/DataGrip 配置优先级说明。
+
 ## [0.2.2] - 2026-07-27
 
 ### 修复

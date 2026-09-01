@@ -13,3 +13,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "archery-jdbc-driver"
+include("cli")

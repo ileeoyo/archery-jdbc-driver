@@ -29,6 +29,18 @@ Driver 不会直接连接业务数据库，所有登录、查询和 metadata 获
 build/libs/archery-jdbc-driver-<version>.jar
 ```
 
+Skill 使用的 CLI fat jar 可通过以下命令构建：
+
+```bash
+./gradlew :cli:jar
+```
+
+构建产物位于：
+
+```text
+cli/build/libs/archery-query-runner-<version>.jar
+```
+
 如果在 Windows PowerShell 中执行，可使用：
 
 ```powershell
@@ -64,15 +76,17 @@ jdbc:archery:https://archery.example.com?instanceName=xxx
 
 支持参数：
 
+以下配置均可通过 JDBC URL 查询参数或 Driver Properties 提供；当 URL 查询参数和 Driver Properties 存在同名配置时，以 URL 查询参数为准。用户名参数统一为 JDBC 标准 `user`。
+
 | 参数 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `instanceName` | 是 | 无 | Archery 实例名，对应查询页面选择的实例 |
 | `dbName` | 否 | 空字符串 | 默认 database；不填写时可在 Database 工具中勾选并切换 schema/database |
 | `schemaName` | 否 | 空字符串 | 默认 schema，MySQL 场景通常可为空 |
-| `username` | 否 | `Properties.user` | Archery 用户名 |
+| `user` | 是 | 无 | Archery 用户名 |
 | `password` | 是 | 无 | Archery 密码 |
 | `contextPath` | 否 | `/sql` | Archery SQL Web 路由前缀 |
-| `limitNum` | 否 | `100` | 传给 Archery 查询接口的默认 limit 参数 |
+| `limitNum` | 否 | `500` | 传给 Archery 查询接口的最大返回行数，支持任意非负整数，`0` 表示 Archery max；实际返回仍受 SQL limit 和 Archery 服务端上限约束 |
 | `connectTimeoutMillis` | 否 | `10000` | HTTP 连接超时 |
 | `readTimeoutMillis` | 否 | `60000` | HTTP 读取超时 |
 | `debugLog` | 否 | 空字符串 | 本地诊断日志路径；为空时不写日志 |

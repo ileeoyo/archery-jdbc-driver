@@ -51,7 +51,7 @@ public final class ArcheryJdbcConfig {
 
 
     /**
-     * 从 JDBC URL 和 Properties 解析连接配置，Properties 中的值优先级更高。
+     * 从 JDBC URL 和 Properties 解析连接配置，JDBC URL 查询参数优先级更高。
      */
     public static ArcheryJdbcConfig parse(String url, Properties info) throws SQLException {
         if (url == null || !url.startsWith(URL_PREFIX)) {
@@ -72,9 +72,9 @@ public final class ArcheryJdbcConfig {
         String instanceName = override(properties, queryParams, "instanceName", null);
         String dbName = override(properties, queryParams, "dbName", null);
         String schemaName = override(properties, queryParams, "schemaName", "");
-        String username = override(properties, queryParams, "username", properties.getProperty("user"));
+        String username = override(properties, queryParams, "user", null);
         String password = override(properties, queryParams, "password", null);
-        int limitNum = parsePositiveInt(override(properties, queryParams, "limitNum", String.valueOf(DEFAULT_LIMIT_NUM)), "limitNum");
+        int limitNum = parseNonNegativeInt(override(properties, queryParams, "limitNum", String.valueOf(DEFAULT_LIMIT_NUM)), "limitNum");
         int connectTimeoutMillis = parsePositiveInt(override(properties, queryParams, "connectTimeoutMillis",
             String.valueOf(DEFAULT_CONNECT_TIMEOUT_MILLIS)), "connectTimeoutMillis");
         int readTimeoutMillis = parsePositiveInt(override(properties, queryParams, "readTimeoutMillis",
@@ -83,7 +83,7 @@ public final class ArcheryJdbcConfig {
 
         requireText(baseUrl, "baseUrl");
         requireText(instanceName, "instanceName");
-        requireText(username, "username");
+        requireText(username, "user");
         requireText(password, "password");
 
         return new ArcheryJdbcConfig(baseUrl, contextPath, instanceName, nullToEmpty(dbName), schemaName, username, password,
@@ -221,12 +221,12 @@ public final class ArcheryJdbcConfig {
 
 
     private static String override(Properties properties, Map<String, String> queryParams, String key, String defaultValue) {
-        String propertyValue = properties.getProperty(key);
-        if (propertyValue != null) {
-            return propertyValue;
-        }
         String queryValue = queryParams.get(key);
-        return queryValue != null ? queryValue : defaultValue;
+        if (queryValue != null) {
+            return queryValue;
+        }
+        String propertyValue = properties.getProperty(key);
+        return propertyValue != null ? propertyValue : defaultValue;
     }
 
 
@@ -239,6 +239,19 @@ public final class ArcheryJdbcConfig {
             return parsed;
         } catch (NumberFormatException e) {
             throw new SQLException(name + " must be a positive integer", e);
+        }
+    }
+
+
+    private static int parseNonNegativeInt(String value, String name) throws SQLException {
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < 0) {
+                throw new SQLException(name + " must be non-negative");
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new SQLException(name + " must be a non-negative integer", e);
         }
     }
 

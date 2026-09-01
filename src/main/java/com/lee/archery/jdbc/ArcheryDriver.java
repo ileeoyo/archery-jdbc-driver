@@ -37,9 +37,9 @@ public final class ArcheryDriver implements Driver {
     public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
         return new DriverPropertyInfo[]{
             property("instanceName", true, "Archery 实例名"),
-            property("dbName", true, "默认数据库名"),
+            property("dbName", false, "默认数据库名"),
             property("schemaName", false, "默认 schema"),
-            property("username", true, "Archery 用户名"),
+            property("user", true, "Archery 用户名"),
             property("password", true, "Archery 密码"),
             property("contextPath", false, "Archery SQL Web 路由前缀，默认 /sql")
         };
