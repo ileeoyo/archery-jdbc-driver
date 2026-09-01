@@ -118,6 +118,7 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             jar-file: ${{ steps.build.outputs.jar-file }}
+            runner-jar-file: ${{ steps.build.outputs.runner-jar-file }}
 
         steps:
             -   name: Checkout code
@@ -139,26 +140,43 @@ jobs:
             -   name: Grant execute permission for gradlew
                 run: chmod +x gradlew
 
-            -   name: Build JDBC driver jar
+            -   name: Build JDBC driver and runner jars
                 id: build
                 run: |
-                    ./gradlew clean jar -PdriverVersion=${{ needs.check-and-create-tag.outputs.version }}
+                    ./gradlew clean jar :cli:jar -PdriverVersion=${{ needs.check-and-create-tag.outputs.version }}
                     # 查找生成的 Driver jar，排除源码包和文档包。
-                    JAR_FILE=$(find build/libs -maxdepth 1 -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" -type f | sort | head -1)
+                    JAR_FILE=$(find build/libs -maxdepth 1 -name "archery-jdbc-driver-*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" -type f | sort | head -1)
                     if [ -z "$JAR_FILE" ]; then
-                      echo "Error: No .jar file found in build/libs"
+                      echo "Error: No JDBC driver .jar file found in build/libs"
+                      exit 1
+                    fi
+                    RUNNER_JAR_FILE=$(find cli/build/libs -maxdepth 1 -name "archery-query-runner-*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" -type f | sort | head -1)
+                    if [ -z "$RUNNER_JAR_FILE" ]; then
+                      echo "Error: No query runner .jar file found in cli/build/libs"
                       exit 1
                     fi
                     JAR_NAME=$(basename "$JAR_FILE")
+                    RUNNER_JAR_NAME=$(basename "$RUNNER_JAR_FILE")
                     echo "jar-file=$JAR_NAME" >> $GITHUB_OUTPUT
-                    echo "JAR file: $JAR_NAME"
-                    echo "Full path: $JAR_FILE"
+                    echo "runner-jar-file=$RUNNER_JAR_NAME" >> $GITHUB_OUTPUT
+                    echo "JDBC driver jar: $JAR_NAME"
+                    echo "JDBC driver path: $JAR_FILE"
+                    echo "Query runner jar: $RUNNER_JAR_NAME"
+                    echo "Query runner path: $RUNNER_JAR_FILE"
 
             -   name: Upload JDBC driver artifact
                 uses: actions/upload-artifact@v4
                 with:
                     name: archery-jdbc-driver
                     path: build/libs/${{ steps.build.outputs.jar-file }}
+                    retention-days: 1
+                    if-no-files-found: error
+
+            -   name: Upload query runner artifact
+                uses: actions/upload-artifact@v4
+                with:
+                    name: archery-query-runner
+                    path: cli/build/libs/${{ steps.build.outputs.runner-jar-file }}
                     retention-days: 1
                     if-no-files-found: error
 
@@ -179,6 +197,12 @@ jobs:
                 with:
                     name: archery-jdbc-driver
                     path: ./artifacts/archery-jdbc-driver
+
+            -   name: Download query runner artifact
+                uses: actions/download-artifact@v4
+                with:
+                    name: archery-query-runner
+                    path: ./artifacts/archery-query-runner
 
             -   name: Read changelog for current version
                 id: changelog
@@ -232,14 +256,20 @@ jobs:
                 run: |
                     echo "Checking if artifacts exist..."
                     DRIVER_FILE="./artifacts/archery-jdbc-driver/${{ needs.build-driver.outputs.jar-file }}"
-                    
+                    RUNNER_FILE="./artifacts/archery-query-runner/${{ needs.build-driver.outputs.runner-jar-file }}"
+
                     if [ ! -f "$DRIVER_FILE" ]; then
                       echo "Error: JDBC driver jar not found: $DRIVER_FILE"
                       exit 1
                     fi
-                    
+                    if [ ! -f "$RUNNER_FILE" ]; then
+                      echo "Error: query runner jar not found: $RUNNER_FILE"
+                      exit 1
+                    fi
+
                     echo "All artifacts verified successfully"
                     echo "JDBC driver: $DRIVER_FILE"
+                    echo "Query runner: $RUNNER_FILE"
 
             -   name: Create Release
                 id: create_release
@@ -252,5 +282,6 @@ jobs:
                     prerelease: ${{ needs.check-and-create-tag.outputs.is_prerelease }}
                     files: |
                         ./artifacts/archery-jdbc-driver/${{ needs.build-driver.outputs.jar-file }}
+                        ./artifacts/archery-query-runner/${{ needs.build-driver.outputs.runner-jar-file }}
 
             # GitHub会自动为Release添加源代码下载链接，无需手动上传
