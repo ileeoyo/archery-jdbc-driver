@@ -110,9 +110,20 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
         if ("getTypeInfo".equals(name)) {
             return typeInfo();
         }
-        if ("getPrimaryKeys".equals(name) || "getImportedKeys".equals(name) || "getExportedKeys".equals(name)
-            || "getIndexInfo".equals(name) || "getProcedures".equals(name) || "getProcedureColumns".equals(name)
-            || "getFunctions".equals(name) || "getFunctionColumns".equals(name)) {
+        if ("getPrimaryKeys".equals(name)) {
+            return primaryKeys(args);
+        }
+        if ("getIndexInfo".equals(name)) {
+            return indexInfo(args);
+        }
+        if ("getImportedKeys".equals(name)) {
+            return importedKeys(args);
+        }
+        if ("getExportedKeys".equals(name)) {
+            return exportedKeys(args);
+        }
+        if ("getProcedures".equals(name) || "getProcedureColumns".equals(name) || "getFunctions".equals(name)
+            || "getFunctionColumns".equals(name)) {
             return empty(columnsFor(name));
         }
         if ("supportsTransactions".equals(name) || "supportsBatchUpdates".equals(name)
@@ -166,13 +177,15 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
         String tablePattern = args != null && args.length > 2 ? stringArg(args[2], "%") : "%";
         String[] types = args != null && args.length > 3 && args[3] instanceof String[] ? (String[]) args[3] : null;
         List<Map<String, Object>> rows = new ArrayList<>();
-        if (!acceptType(types, "TABLE")) {
-            return resultSet(tableColumns(), rows);
-        }
         for (String schema : schemaNames(schemaArg)) {
             for (String tableName : tableNames(schema, tablePattern)) {
+                ArcheryTableDefinition definition = safeTableDefinition(schema, tableName);
+                String tableType = definition.isView() ? "VIEW" : "TABLE";
+                if (!acceptType(types, tableType)) {
+                    continue;
+                }
                 rows.add(row("TABLE_CAT", catalog, "TABLE_SCHEM", schema, "TABLE_NAME", tableName,
-                    "TABLE_TYPE", "TABLE", "REMARKS", ""));
+                    "TABLE_TYPE", tableType, "REMARKS", definition.getTableComment()));
             }
         }
         return resultSet(tableColumns(), rows);
@@ -187,7 +200,8 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
         List<Map<String, Object>> rows = new ArrayList<>();
         for (String schema : schemaNames(schemaArg)) {
             for (String tableName : tableNames(schema, tablePattern)) {
-                for (ArcheryTableDefinition.Column column : safeTableDefinition(schema, tableName).getColumns()) {
+                ArcheryTableDefinition definition = safeTableDefinition(schema, tableName);
+                for (ArcheryTableDefinition.Column column : definitionColumns(definition, schema, tableName)) {
                     if (matches(column.getName(), columnPattern)) {
                         rows.add(columnRow(catalog, schema, tableName, column));
                     }
@@ -195,6 +209,27 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
             }
         }
         return resultSet(columnColumns(), rows);
+    }
+
+
+    /**
+     * 视图的建表语句不含字段定义，列名改由 resource 接口补充，避免 IDE 展开视图时无列可显示。
+     */
+    private List<ArcheryTableDefinition.Column> definitionColumns(ArcheryTableDefinition definition, String schema,
+                                                                  String tableName) {
+        if (!definition.isView()) {
+            return definition.getColumns();
+        }
+        List<ArcheryTableDefinition.Column> columns = new ArrayList<>();
+        int ordinal = 1;
+        try {
+            for (String columnName : connection.columnNames(schema, tableName)) {
+                columns.add(ArcheryTableDefinition.viewColumn(columnName, ordinal++));
+            }
+        } catch (SQLException ignored) {
+            return new ArrayList<>();
+        }
+        return columns;
     }
 
 
@@ -231,7 +266,147 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
 
 
     private ResultSet tableTypes() {
-        return resultSet(columns("TABLE_TYPE"), Arrays.asList(row("TABLE_TYPE", "TABLE")));
+        return resultSet(columns("TABLE_TYPE"), Arrays.asList(row("TABLE_TYPE", "TABLE"), row("TABLE_TYPE", "VIEW")));
+    }
+
+
+    private ResultSet primaryKeys(Object[] args) throws SQLException {
+        String catalog = null;
+        String schema = args != null && args.length > 1 ? stringArg(args[1], null) : null;
+        String tableName = args != null && args.length > 2 ? stringArg(args[2], null) : null;
+        if (schema == null || tableName == null) {
+            return empty(columnsFor("getPrimaryKeys"));
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        ArcheryTableDefinition definition = safeTableDefinition(schema, tableName);
+        for (ArcheryTableDefinition.Index index : definition.getIndexes()) {
+            if (!index.isPrimary()) {
+                continue;
+            }
+            int seq = 1;
+            for (String columnName : index.getColumnNames()) {
+                rows.add(row("TABLE_CAT", catalog, "TABLE_SCHEM", schema, "TABLE_NAME", tableName,
+                    "COLUMN_NAME", columnName, "KEY_SEQ", seq++, "PK_NAME", index.getName()));
+            }
+        }
+        return resultSet(columnsFor("getPrimaryKeys"), rows);
+    }
+
+
+    private ResultSet indexInfo(Object[] args) throws SQLException {
+        String catalog = null;
+        String schema = args != null && args.length > 1 ? stringArg(args[1], null) : null;
+        String tableName = args != null && args.length > 2 ? stringArg(args[2], null) : null;
+        boolean uniqueOnly = args != null && args.length > 3 && Boolean.TRUE.equals(args[3]);
+        if (schema == null || tableName == null) {
+            return empty(indexInfoColumns());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (ArcheryTableDefinition.Index index : safeTableDefinition(schema, tableName).getIndexes()) {
+            if (uniqueOnly && !index.isUnique()) {
+                continue;
+            }
+            int seq = 1;
+            for (ArcheryTableDefinition.IndexColumn column : index.getColumns()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("TABLE_CAT", catalog);
+                row.put("TABLE_SCHEM", schema);
+                row.put("TABLE_NAME", tableName);
+                row.put("NON_UNIQUE", index.isUnique() ? Boolean.FALSE : Boolean.TRUE);
+                row.put("INDEX_QUALIFIER", null);
+                row.put("INDEX_NAME", index.getName());
+                // 建表语句无法区分聚簇/Hash 索引实现细节，统一按 OTHER 暴露由 IDE 自行推断
+                row.put("TYPE", DatabaseMetaData.tableIndexOther);
+                row.put("ORDINAL_POSITION", seq++);
+                row.put("COLUMN_NAME", column.getName());
+                row.put("ASC_OR_DESC", column.getDirection());
+                row.put("CARDINALITY", 0L);
+                row.put("PAGES", 0L);
+                row.put("FILTER_CONDITION", null);
+                rows.add(row);
+            }
+        }
+        return resultSet(indexInfoColumns(), rows);
+    }
+
+
+    private ResultSet importedKeys(Object[] args) throws SQLException {
+        String catalog = null;
+        String schema = args != null && args.length > 1 ? stringArg(args[1], null) : null;
+        String tableName = args != null && args.length > 2 ? stringArg(args[2], null) : null;
+        if (schema == null || tableName == null) {
+            return empty(foreignKeyColumns());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        // imported：当前表是外键方，被引用表来自 DDL
+        for (ArcheryTableDefinition.ForeignKey foreignKey : safeTableDefinition(schema, tableName).getForeignKeys()) {
+            String referencedSchema = foreignKey.getReferencedSchema().isEmpty()
+                ? schema : foreignKey.getReferencedSchema();
+            addForeignKeyRows(rows, catalog, referencedSchema, foreignKey.getReferencedTable(),
+                foreignKey.getReferencedColumns(), schema, tableName, foreignKey.getColumns(), foreignKey);
+        }
+        return resultSet(foreignKeyColumns(), rows);
+    }
+
+
+    private ResultSet exportedKeys(Object[] args) throws SQLException {
+        String catalog = null;
+        String schema = args != null && args.length > 1 ? stringArg(args[1], null) : null;
+        String tableName = args != null && args.length > 2 ? stringArg(args[2], null) : null;
+        if (schema == null || tableName == null) {
+            return empty(foreignKeyColumns());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        // exported：当前表是被引用方，需要反查同库其它表的外键定义
+        for (String candidate : tableNames(schema, "%")) {
+            for (ArcheryTableDefinition.ForeignKey foreignKey : safeTableDefinition(schema, candidate).getForeignKeys()) {
+                String referencedSchema = foreignKey.getReferencedSchema().isEmpty()
+                    ? schema : foreignKey.getReferencedSchema();
+                if (referencedSchema.equals(schema) && foreignKey.getReferencedTable().equalsIgnoreCase(tableName)) {
+                    addForeignKeyRows(rows, catalog, schema, tableName, foreignKey.getReferencedColumns(),
+                        referencedSchema, candidate, foreignKey.getColumns(), foreignKey);
+                }
+            }
+        }
+        return resultSet(foreignKeyColumns(), rows);
+    }
+
+
+    /**
+     * 外键行按字段顺序展开。被引用方固定是 PKTABLE，外键方固定是 FKTABLE，
+     * imported 和 exported 的差异只在两边的表/列来源，避免方向判断写错。
+     */
+    private void addForeignKeyRows(List<Map<String, Object>> rows, String catalog, String pkSchema, String pkTable,
+                                   List<String> pkColumns, String fkSchema, String fkTable, List<String> fkColumns,
+                                   ArcheryTableDefinition.ForeignKey foreignKey) {
+        int count = Math.max(pkColumns.size(), fkColumns.size());
+        int seq = 1;
+        for (int index = 0; index < count; index++) {
+            rows.add(row("PKTABLE_CAT", catalog, "PKTABLE_SCHEM", pkSchema, "PKTABLE_NAME", pkTable,
+                "PKCOLUMN_NAME", index < pkColumns.size() ? pkColumns.get(index) : null,
+                "FKTABLE_CAT", catalog, "FKTABLE_SCHEM", fkSchema, "FKTABLE_NAME", fkTable,
+                "FKCOLUMN_NAME", index < fkColumns.size() ? fkColumns.get(index) : null,
+                "KEY_SEQ", seq++, "UPDATE_RULE", ruleCode(foreignKey.getUpdateRule()),
+                "DELETE_RULE", ruleCode(foreignKey.getDeleteRule()), "FK_NAME", foreignKey.getName(),
+                "PK_NAME", null, "DEFERRABILITY", DatabaseMetaData.importedKeyNotDeferrable));
+        }
+    }
+
+
+    private int ruleCode(String rule) {
+        if ("CASCADE".equals(rule)) {
+            return DatabaseMetaData.importedKeyCascade;
+        }
+        if ("SET NULL".equals(rule)) {
+            return DatabaseMetaData.importedKeySetNull;
+        }
+        if ("SET DEFAULT".equals(rule)) {
+            return DatabaseMetaData.importedKeySetDefault;
+        }
+        if ("NO ACTION".equals(rule)) {
+            return DatabaseMetaData.importedKeyNoAction;
+        }
+        return DatabaseMetaData.importedKeyRestrict;
     }
 
 
@@ -260,9 +435,8 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
             "REMARKS", column.getComment(), "COLUMN_DEF", column.getDefaultValue(), "SQL_DATA_TYPE", null,
             "SQL_DATETIME_SUB", null, "CHAR_OCTET_LENGTH", column.size(), "ORDINAL_POSITION", column.getOrdinal(),
             "IS_NULLABLE", column.isNullable() ? "YES" : "NO", "SCOPE_CATALOG", null, "SCOPE_SCHEMA", null,
-            "SCOPE_TABLE", null, "SOURCE_DATA_TYPE", null, "IS_AUTOINCREMENT",
-            column.getExtra().toLowerCase(java.util.Locale.ROOT).contains("auto_increment") ? "YES" : "NO",
-            "IS_GENERATEDCOLUMN", "NO");
+            "SCOPE_TABLE", null, "SOURCE_DATA_TYPE", null, "IS_AUTOINCREMENT", column.isAutoIncrement() ? "YES" : "NO",
+            "IS_GENERATEDCOLUMN", column.getGenerationExpression().isEmpty() ? "NO" : "YES");
     }
 
 
@@ -295,6 +469,19 @@ public final class ArcheryDatabaseMetaData implements InvocationHandler {
             return columns("TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "KEY_SEQ", "PK_NAME");
         }
         return columns("TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME");
+    }
+
+
+    private List<ArcheryColumn> indexInfoColumns() {
+        return columns("TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "NON_UNIQUE", "INDEX_QUALIFIER", "INDEX_NAME",
+            "TYPE", "ORDINAL_POSITION", "COLUMN_NAME", "ASC_OR_DESC", "CARDINALITY", "PAGES", "FILTER_CONDITION");
+    }
+
+
+    private List<ArcheryColumn> foreignKeyColumns() {
+        return columns("PKTABLE_CAT", "PKTABLE_SCHEM", "PKTABLE_NAME", "PKCOLUMN_NAME", "FKTABLE_CAT", "FKTABLE_SCHEM",
+            "FKTABLE_NAME", "FKCOLUMN_NAME", "KEY_SEQ", "UPDATE_RULE", "DELETE_RULE", "FK_NAME", "PK_NAME",
+            "DEFERRABILITY");
     }
 
 

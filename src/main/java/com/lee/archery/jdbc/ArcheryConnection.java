@@ -23,6 +23,10 @@ public final class ArcheryConnection implements InvocationHandler {
     private final java.util.Map<String, java.util.List<String>> tableNamesBySchema = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, java.util.List<String>> columnNamesByTable = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, ArcheryTableDefinition> tableDefinitions = new java.util.LinkedHashMap<>();
+    /**
+     * 库级字符集信息缓存，key 为 schema|charset 或 schema|collation，null 值表示推断失败。
+     */
+    private final java.util.Map<String, String> schemaAttributes = new java.util.LinkedHashMap<>();
 
 
     private ArcheryConnection(ArcheryJdbcConfig config) {
@@ -94,10 +98,13 @@ public final class ArcheryConnection implements InvocationHandler {
 
 
     java.util.List<String> schemas() throws SQLException {
+        long startedAt = System.currentTimeMillis();
         java.util.List<String> names = new java.util.ArrayList<>(client.resource("database", "", "", "").getNames());
         if (names.isEmpty() && config.getDbName() != null && !config.getDbName().isEmpty()) {
             names.add(config.getDbName());
         }
+        ArcheryDebugLog.write(config, "resource database names=" + names.size()
+            + ", elapsedMs=" + (System.currentTimeMillis() - startedAt));
         return names;
     }
 
@@ -113,8 +120,11 @@ public final class ArcheryConnection implements InvocationHandler {
         String cacheKey = metadataCacheKey(selectedDatabase, selectedSchema);
         java.util.List<String> tableNames = tableNamesBySchema.get(cacheKey);
         if (tableNames == null) {
+            long startedAt = System.currentTimeMillis();
             tableNames = new java.util.ArrayList<>(client.resource("table", selectedDatabase, selectedSchema, "").getNames());
             tableNamesBySchema.put(cacheKey, tableNames);
+            ArcheryDebugLog.write(config, "resource table db=" + selectedDatabase + ", schema=" + selectedSchema
+                + ", names=" + tableNames.size() + ", elapsedMs=" + (System.currentTimeMillis() - startedAt));
         }
         return tableNames;
     }
@@ -149,15 +159,82 @@ public final class ArcheryConnection implements InvocationHandler {
     }
 
 
+    /**
+     * 库的默认排序规则；resource 接口不提供该信息，改用任一表的结构推断，取不到时返回空串。
+     */
+    String defaultCollation(String schemaName) {
+        String collation = tableAttribute(schemaName, "collation");
+        return collation == null ? "" : collation;
+    }
+
+
+    /**
+     * 库的默认字符集；与 defaultCollation 共用一次推断结果，避免重复 describe。
+     */
+    String defaultCharset(String schemaName) {
+        String charset = tableAttribute(schemaName, "charset");
+        return charset == null ? "" : charset;
+    }
+
+
+    /**
+     * 库级字符集信息只能靠表结构推断。单表可能显式覆盖 CHARSET/COLLATE，
+     * 因此取第一张能解析出字符集的表作为近似值；推断失败返回 null。
+     */
+    private String tableAttribute(String schemaName, String attribute) {
+        String key = metadataCacheKey(nullToEmpty(schemaName), attribute);
+        if (schemaAttributes.containsKey(key)) {
+            return schemaAttributes.get(key);
+        }
+        String value = null;
+        try {
+            for (String tableName : tableNames(schemaName)) {
+                ArcheryTableDefinition definition = tableDefinition(schemaName, tableName);
+                String charset = definition.getDefaultCharset();
+                String collation = definition.getCollation();
+                if ("charset".equals(attribute) ? !charset.isEmpty() : !collation.isEmpty()) {
+                    value = "charset".equals(attribute) ? charset : collation;
+                    break;
+                }
+            }
+        } catch (SQLException ignored) {
+            value = null;
+        }
+        schemaAttributes.put(key, value);
+        return value;
+    }
+
+
     ArcheryTableDefinition tableDefinition(String schemaName, String tableName) throws SQLException {
         String selectedSchema = schemaName == null || schemaName.isEmpty() ? currentSchema() : schemaName;
         String selectedDatabase = metadataDatabase(selectedSchema);
         String key = metadataCacheKey(selectedDatabase, selectedSchema) + "." + tableName;
         ArcheryTableDefinition definition = tableDefinitions.get(key);
-        if (definition == null) {
-            definition = ArcheryTableDefinition.fromDescribe(tableName, client.describeTable(selectedDatabase, selectedSchema, tableName));
-            tableDefinitions.put(key, definition);
+        if (definition != null) {
+            ArcheryDebugLog.write(config, "tableDefinition cacheHit table=" + key
+                + ", cachedTables=" + tableDefinitions.size());
+            return definition;
         }
+        // describe 是整库元数据刷新的主要耗时来源，必须记录每次真实调用和耗时，才能定位 IDE 刷新慢的原因
+        long startedAt = System.currentTimeMillis();
+        try {
+            definition = ArcheryTableDefinition.fromDescribe(tableName,
+                client.describeTable(selectedDatabase, selectedSchema, tableName));
+        } catch (SQLException e) {
+            ArcheryDebugLog.write(config, "tableDefinition failed table=" + key
+                + ", elapsedMs=" + (System.currentTimeMillis() - startedAt) + ", error=" + e.getMessage());
+            throw e;
+        }
+        long elapsed = System.currentTimeMillis() - startedAt;
+        tableDefinitions.put(key, definition);
+        ArcheryDebugLog.write(config, "tableDefinition describe table=" + key + ", elapsedMs=" + elapsed
+            + ", columns=" + definition.getColumns().size()
+            + ", indexes=" + definition.getIndexes().size()
+            + ", foreignKeys=" + definition.getForeignKeys().size()
+            + ", checks=" + definition.getCheckConstraints().size()
+            + ", partitions=" + definition.getPartitions().size()
+            + ", view=" + definition.isView()
+            + ", createSqlLength=" + definition.getCreateSql().length());
         return definition;
     }
 

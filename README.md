@@ -11,9 +11,11 @@ Driver 不会直接连接业务数据库，所有登录、查询和 metadata 获
 - 支持 `SELECT`、`SHOW`、`DESC`、`DESCRIBE`、`EXPLAIN`、`WITH` 开头的只读 SQL。
 - 支持把 Archery `/query/` 返回的 `column_list` 和 `rows` 映射成 JDBC `ResultSet`。
 - 支持通过 Archery resource 接口暴露 catalog、schema、table metadata。
-- 支持通过 Archery describe table 接口解析字段、字段类型、默认值、注释、索引和部分约束 metadata。
+- 支持通过 Archery describe table 接口解析字段、字段类型、默认值、注释、生成列、索引、外键、`CHECK` 约束、分区和表选项 metadata。
+- 支持 `getPrimaryKeys()`、`getIndexInfo()`、`getImportedKeys()`、`getExportedKeys()` 等 JDBC 元数据方法。
+- 支持把视图以 `VIEW` 类型暴露，并提供视图列名。
 - 支持适配 DataGrip 常见 `information_schema` metadata 查询，避免把 IDE introspection SQL 直接发给 Archery 查询接口。
-- 不支持 DDL、DML、真实事务、批处理、存储过程、外键 metadata 和查询取消。
+- 不支持 DDL、DML、真实事务、批处理、存储过程和查询取消。
 
 ## 构建 Driver Jar
 
@@ -133,13 +135,13 @@ Driver 通过两类方式给 IDEA / DataGrip 提供基础 metadata：
 - `DatabaseMetaData` 方法：例如 `getCatalogs()`、`getSchemas()`、`getTables()`、`getColumns()`、`getTypeInfo()`。
 - DataGrip introspection SQL 适配：拦截常见 `information_schema.schemata`、`information_schema.tables`、`information_schema.columns`、`information_schema.statistics`、`information_schema.table_constraints`、`information_schema.key_column_usage` 等查询。
 
-库表信息主要来自 Archery resource 接口。字段、字段类型、默认值、注释、索引和唯一约束信息主要来自 describe table 接口返回的 MySQL 建表语句。
+库表信息主要来自 Archery resource 接口。字段、字段类型、默认值、注释、索引、外键、约束、分区和表选项信息主要来自 describe table 接口返回的 MySQL 建表语句。
 
 当前 metadata 仍是为 IDE 补全和展示服务的轻量实现，不保证覆盖完整 MySQL metadata：
 
-- `getPrimaryKeys()`、`getImportedKeys()`、`getExportedKeys()`、`getIndexInfo()`、存储过程和函数相关方法目前返回结构正确但行为空的 `ResultSet`。
+- 存储过程和函数相关方法目前返回结构正确但行为空的 `ResultSet`。
 - 系统库表，例如 `mysql.*`、`performance_schema.*`、`sys.*`，通常返回空结果以避免影响 introspection。
-- 外键 metadata 暂未实现。
+- 分区、约束等元数据依赖建表语句原文解析，遇到无法识别的 DDL 写法可能解析不全。
 
 ## 只读限制
 
